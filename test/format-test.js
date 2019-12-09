@@ -1,19 +1,21 @@
-var fs = require('fs');
-var vows = require('vows');
-var assert = require('assert');
-var winston = require('winston');
-var dgram = require('dgram');
-var parser = require('glossy').Parse;
-var Syslog = require('../lib/winston-syslog').Syslog;
+'use strict';
 
-var PORT = 11229;
-var server;
-var transport;
+const vows = require('vows');
+const assert = require('assert');
+const Syslog = require('../lib/winston-syslog.js').Syslog;
+const dgram = require('dgram');
+const parser = require('glossy').Parse;
+
+const PORT = 11229;
+let server;
+let transport;
+
+const { MESSAGE, LEVEL } = require('triple-beam');
 
 vows.describe('syslog messages').addBatch({
   'opening fake syslog server': {
-    topic: function () {
-      var self = this;
+    'topic': function () {
+      const self = this;
       server = dgram.createSocket('udp4');
       server.on('listening', function () {
         self.callback();
@@ -22,19 +24,18 @@ vows.describe('syslog messages').addBatch({
       server.bind(PORT);
     },
     'default format': {
-      topic: function () {
-        var self = this;
+      'topic': function () {
+        const self = this;
         server.once('message', function (msg) {
           parser.parse(msg, function (d) {
-            self.callback(undefined, d);
+            self.callback(null, d);
           });
         });
 
-        transport = new winston.transports.Syslog({
+        transport = new Syslog({
           port: PORT
         });
-
-        transport.log('debug', 'ping', null, function (err) {
+        transport.log({ [LEVEL]: 'debug', [MESSAGE]: 'ping' }, function (err) {
           assert.ifError(err);
         });
       },
@@ -43,20 +44,20 @@ vows.describe('syslog messages').addBatch({
         transport.close();
       },
       'setting locahost option to a different falsy value (null)': {
-        topic: function () {
-          var self = this;
+        'topic': function () {
+          const self = this;
           server.once('message', function (msg) {
             parser.parse(msg, function (d) {
-              self.callback(undefined, d);
+              self.callback(null, d);
             });
           });
 
-          transport = new winston.transports.Syslog({
+          transport = new Syslog({
             port: PORT,
             localhost: null
           });
 
-          transport.log('debug', 'ping2', null, function (err) {
+          transport.log({ [LEVEL]: 'debug', [MESSAGE]: 'ping2' }, function (err) {
             assert.ifError(err);
           });
         },
@@ -65,21 +66,21 @@ vows.describe('syslog messages').addBatch({
           transport.close();
         },
         'setting appName option to hello': {
-          topic: function () {
-            var self = this;
+          'topic': function () {
+            const self = this;
             server.once('message', function (msg) {
               parser.parse(msg, function (d) {
-                self.callback(undefined, d);
+                self.callback(null, d);
               });
             });
 
-            transport = new winston.transports.Syslog({
+            transport = new Syslog({
               port: PORT,
               type: '5424',
               appName: 'hello'
             });
 
-            transport.log('debug', 'app name test', null, function (err) {
+            transport.log({ [LEVEL]: 'debug', [MESSAGE]: 'app name test' }, function (err) {
               assert.ifError(err);
             });
           },
@@ -88,21 +89,21 @@ vows.describe('syslog messages').addBatch({
             transport.close();
           },
           'setting app_name option to hello': {
-            topic: function () {
-              var self = this;
+            'topic': function () {
+              const self = this;
               server.once('message', function (msg) {
                 parser.parse(msg, function (d) {
-                  self.callback(undefined, d);
+                  self.callback(null, d);
                 });
               });
 
-              transport = new winston.transports.Syslog({
+              transport = new Syslog({
                 port: PORT,
                 type: '5424',
                 app_name: 'hello'
               });
 
-              transport.log('debug', 'app name test', null, function (err) {
+              transport.log({ [LEVEL]: 'debug', [MESSAGE]: 'app name test' }, function (err) {
                 assert.ifError(err);
               });
             },
@@ -114,7 +115,48 @@ vows.describe('syslog messages').addBatch({
         }
       }
     },
-    teardown: function () {
+    'teardown': function () {
+      server.close();
+    }
+  }
+}).addBatch({
+  'opening fake syslog server': {
+    'topic': function () {
+      var self = this;
+      server = dgram.createSocket('udp4');
+      server.on('listening', function () {
+        self.callback();
+      });
+
+      server.bind(PORT);
+    },
+    'Custom producer': {
+      'topic': function () {
+        var self = this;
+        server.once('message', function (msg) {
+          self.callback(null, msg.toString());
+        });
+
+        function CustomProducer() {}
+        CustomProducer.prototype.produce = function (opts) {
+          return 'test ' + opts.severity + ': ' + opts.message;
+        };
+
+        transport = new Syslog({
+          port: PORT,
+          customProducer: CustomProducer
+        });
+
+        transport.log({ [LEVEL]: 'debug', [MESSAGE]: 'ping' }, function (err) {
+          assert.ifError(err);
+        });
+      },
+      'should apply custom syslog format': function (msg) {
+        assert.equal(msg, 'test debug: ping');
+        transport.close();
+      }
+    },
+    'teardown': function () {
       server.close();
     }
   }
